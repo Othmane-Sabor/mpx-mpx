@@ -868,7 +868,6 @@ void set_pcb_priority_command(const char *args)
     }
 }
 
-
 void yield_command(const char *args){
     (void)args;
     sys_req(WRITE, COM1, "Yielding...",12);
@@ -940,3 +939,4 @@ void comhand(void)
         }
     }
 }
+
