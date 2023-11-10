@@ -137,6 +137,7 @@ void set_pcb_priority_command(const char *args);
 void yield_command(const char *args);
 void loadR3_command(const char *args);
 
+//com struct
 command_t commands[] = {
     {"version", version_command, "Displays the current version of MPX and the compilation date"},
     {"shutdown", shutdown_command, "Shutdown the system with confirmation"},
