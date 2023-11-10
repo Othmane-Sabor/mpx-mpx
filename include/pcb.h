@@ -62,6 +62,4 @@ struct queue* get_blocked_q(void);
 struct queue* get_susp_ready_q(void);
 struct queue* get_susp_blocked_q(void);
 
-
-
 #endif /* PCB_H */

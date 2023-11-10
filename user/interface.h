@@ -3,7 +3,6 @@
 #ifndef INTERFACE_H
 #define INTERFACE_H
 
-
 // Function prototype for comhand
 void comhand(void);
 

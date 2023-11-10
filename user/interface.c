@@ -112,7 +112,6 @@ typedef struct
 } command_t;
 
 // Forward declarations
-void create_pcb_command(const char *args);
 void version_command();
 void help_command();
 void shutdown_command();
@@ -124,6 +123,7 @@ void get_time_command();
 void set_time_command(const char *args);
 
 // PCB command declarations
+void create_pcb_command(const char *args);
 void show_pcb_command(const char *args);
 void show_all_pcbs_command();
 void show_ready_pcbs_command();
@@ -134,6 +134,8 @@ void resume_pcb_command(const char *name);
 void block_pcb_command(const char *name);
 void unblock_pcb_command(const char *name);
 void set_pcb_priority_command(const char *args);
+void yield_command(const char *args);
+void loadR3_command(const char *args);
 
 command_t commands[] = {
     {"version", version_command, "Displays the current version of MPX and the compilation date"},
@@ -143,6 +145,7 @@ command_t commands[] = {
     {"setdate", set_date_command, "Set the date: 'setdate [MM/DD/YY]'"},
     {"gettime", get_time_command, "Get the current time"},
     {"settime", set_time_command, "Set the time: 'settime [hh:mm:ss]'"},
+    {"createpcb", create_pcb_command, "Creates a new PCB: createpcb [name] [class ('user' or 'system')] [priority (0-9)]"},
     {"showpcb", show_pcb_command, "Shows a given PCB if it exists: showpcb [name]"},
     {"showreadypcbs", show_ready_pcbs_command, "Shows all existing PCBs in the Ready state"},
     {"showblockedpcbs", show_blocked_pcbs_command, "Shows all existing PCBs in the Blocked state"},
@@ -152,8 +155,9 @@ command_t commands[] = {
     {"resumepcb", resume_pcb_command, "Resume a suspended PCB by name: 'resumepcb [name]'"},
     {"blockpcb", block_pcb_command, "Block a PCB by name: 'blockpcb [name]'"},
     {"unblockpcb", unblock_pcb_command, "Unblock a PCB by name: 'unblockpcb [name]'"},
-    {"createpcb", create_pcb_command, "Creates a new PCB, createpcb [name] [class]('user' or 'system') [priority](0-9) "},
     {"setpcbprio", set_pcb_priority_command, "Sets the priority of a PCB: 'setpcbprio [name] [newpriority (0-9)]'"},
+    {"yield",yield_command,"Yield the CPU"},
+    {"loadR3",loadR3_command,"Load R3"},
     {NULL, NULL, NULL}};
 
 // Function to remove trailing whitespace from input
@@ -166,106 +170,6 @@ void trim_input(char *buf)
         end--;
     }
 }
-
-// Command for creating a pcb in the format: 'createpcb [name] [class] [priority]'
-void create_pcb_command(const char *createpcb_str)
-{
-    // Missing all 3 attributes entirely
-    if (createpcb_str == NULL)
-    {
-        char err_msg[] = "Invalid format: 'createpcb [name] [class] [priority]'\r\n\0";
-        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
-
-        return;
-    }
-
-    char *tokens[3];    // array to store the name, class, and priority
-    char *token = strtok((char *)createpcb_str, " \t\n"); // tokenize the first string on space, tab, or newline
-    
-    int num_tokens = 0;
-
-    // Tokenize what is left of createpcb_str
-    while (token != NULL && num_tokens < 3) 
-    {
-        tokens[num_tokens++] = token;
-        token = strtok(NULL, " \t\n");
-    }
-    
-    // Either too many attributes or not enough attributes
-    if (num_tokens != 3) 
-    {
-        char err_msg[] = "Please provide the name, class, and priority\r\n\0";
-        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
-
-        return;
-    }
-
-    // Process name exceeds length limit 8
-    if (strlen(tokens[0]) > 8) 
-    {
-        char err_msg[] = "Process names must be no more than 8 characters long\r\n\0";
-        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
-
-        return;
-    }
-
-    // Process with the same name already exists
-    if (pcb_find(tokens[0]) != NULL) 
-    {
-        char err_msg[] = "A process by that name already exists\r\n\0";
-        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
-
-        return;
-    }
-
-    int class;
-
-    // Determine the class
-    if (strcmp(tokens[1], "user") == 0) 
-    {
-        class = USER_APP;
-    }
-    else if (strcmp(tokens[1], "system") == 0) 
-    {
-        class = SYSTEM_PROCESS;
-    }
-    // Invalid class entry
-    else
-    {
-        char err_msg[] = "Process class must be either 'user' or 'system'\r\n\0";
-        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
-
-        return;
-    }
-
-    int priority;
-
-    // atoi(str) returns '0' if there is no int in str - check for '0' before conversion
-    if (strcmp(tokens[2], "0") != 0)
-    {
-        priority = atoi(tokens[2]);
-
-        // Priority entry falls outside of the accepted range (a zero here indicates an invalid entry)
-        if (priority < 1 || priority > 9)
-        {
-            char err_msg[] = "Process priority must be an integer between 0 and 9\r\n\0";
-            sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
-
-            return;
-        }
-    }
-    else
-    {
-        priority = 0;
-    }
-
-    pcb_setup(tokens[0], class, priority);
-
-    char success_msg[] = "PCB successfully created\r\n\0";
-
-    sys_req(WRITE, COM1, success_msg, sizeof(success_msg));
-}
-
 
 // Command for displaying the current version and most recent compilation date
 void version_command(const char *args)
@@ -443,7 +347,105 @@ void set_time_command(const char *time_str)
         sys_req(WRITE, COM1, "Time set successfully.\r\n", 26);
     }
 }
-    
+
+// Command for creating a pcb in the format: 'createpcb [name] [class] [priority]'
+void create_pcb_command(const char *createpcb_str)
+{
+    // Missing all 3 attributes entirely
+    if (createpcb_str == NULL)
+    {
+        char err_msg[] = "Invalid format: 'createpcb [name] [class] [priority]'\r\n\0";
+        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
+
+        return;
+    }
+
+    char *tokens[3];                                      // array to store the name, class, and priority
+    char *token = strtok((char *)createpcb_str, " \t\n"); // tokenize the first string on space, tab, or newline
+
+    int num_tokens = 0;
+
+    // Tokenize what is left of createpcb_str
+    while (token != NULL && num_tokens < 3)
+    {
+        tokens[num_tokens++] = token;
+        token = strtok(NULL, " \t\n");
+    }
+
+    // Either too many attributes or not enough attributes
+    if (num_tokens != 3)
+    {
+        char err_msg[] = "Please provide the name, class, and priority\r\n\0";
+        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
+
+        return;
+    }
+
+    // Process name exceeds length limit 8
+    if (strlen(tokens[0]) > 8)
+    {
+        char err_msg[] = "Process names must be no more than 8 characters long\r\n\0";
+        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
+
+        return;
+    }
+
+    // Process with the same name already exists
+    if (pcb_find(tokens[0]) != NULL)
+    {
+        char err_msg[] = "A process by that name already exists\r\n\0";
+        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
+
+        return;
+    }
+
+    int class;
+
+    // Determine the class
+    if (strcmp(tokens[1], "user") == 0)
+    {
+        class = USER_APP;
+    }
+    else if (strcmp(tokens[1], "system") == 0)
+    {
+        class = SYSTEM_PROCESS;
+    }
+    // Invalid class entry
+    else
+    {
+        char err_msg[] = "Process class must be either 'user' or 'system'\r\n\0";
+        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
+
+        return;
+    }
+
+    int priority;
+
+    // atoi(str) returns '0' if there is no int in str - check for '0' before conversion
+    if (strcmp(tokens[2], "0") != 0)
+    {
+        priority = atoi(tokens[2]);
+
+        // Priority entry falls outside of the accepted range (a zero here indicates an invalid entry)
+        if (priority < 1 || priority > 9)
+        {
+            char err_msg[] = "Process priority must be an integer between 0 and 9\r\n\0";
+            sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
+
+            return;
+        }
+    }
+    else
+    {
+        priority = 0;
+    }
+
+    pcb_setup(tokens[0], class, priority);
+
+    char success_msg[] = "PCB successfully created\r\n\0";
+    sys_req(WRITE, COM1, success_msg, sizeof(success_msg));
+}
+
 // Command for showing a pcb in the format: 'showpcb [name]'
 void show_pcb_command(const char *showpcb_str)
 {
@@ -580,6 +582,7 @@ void delete_pcb_command(const char *name)
         {
             char err_msg[] = "Cannot delete a System Process\r\n\0";
             sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
+            return;
         }
         // Remove the PCB from its queue
         if (pcb_remove(pcb) == 0)
@@ -607,8 +610,8 @@ void suspend_pcb_command(const char *name)
     // Check if a name was provided
     if (name == NULL || strlen(name) == 0)
     {
-        sys_req(WRITE, COM1, "Usage: suspendpcb [name]\r\n", 26);
-        return;
+        char err_msg[] = "Usage: suspendpcb [name]\r\n\0";
+        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
     }
 
     struct pcb *pcb = pcb_find(name);
@@ -618,14 +621,16 @@ void suspend_pcb_command(const char *name)
         // Check if the PCB is a system process
         if (pcb->process_class == SYSTEM_PROCESS)
         {
-            sys_req(WRITE, COM1, "System processes cannot be suspended.\r\n", 42);
+            char err_msg[] = "System processes cannot be suspended.\r\n\0";
+            sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
         }
         else
         {
             // Check if the PCB is already suspended
             if (pcb->dispatching_state == SUSPENDED)
             {
-                sys_req(WRITE, COM1, "PCB is already in a suspended state.\r\n", 41);
+                char err_msg[] = "PCB is already in a suspended state.\r\n\0";
+                sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
             }
             else
             {
@@ -636,7 +641,9 @@ void suspend_pcb_command(const char *name)
                 pcb->dispatching_state = SUSPENDED;
 
                 pcb_insert(pcb); // Insert into the suspended queue
-                sys_req(WRITE, COM1, "PCB suspended successfully.\r\n", 30);
+
+                char succ_msg[] = "PCB suspended successfully.\r\n\0";
+                sys_req(WRITE, COM1, succ_msg, sizeof(succ_msg));
             }
         }
     }
@@ -861,6 +868,17 @@ void set_pcb_priority_command(const char *args)
     }
 }
 
+
+void yield_command(const char *args){
+    (void)args;
+    sys_req(WRITE, COM1, "Yielding...",12);
+    sys_req(IDLE);
+}
+
+void loadR3_command(const char *args){
+    (void)args;
+    sys_req(WRITE, COM1, "Loading R3...",14);
+}
 void comhand(void)
 {
     for (;;)

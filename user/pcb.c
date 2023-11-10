@@ -3,47 +3,58 @@
 #include <memory.h>
 #include <sys_req.h>
 
-#define STACK_SIZE 1024
-
 static struct queue *ready_q = NULL;
 static struct queue *blocked_q = NULL;
 static struct queue *susp_ready_q = NULL;
 static struct queue *susp_blocked_q = NULL;
 
 // Function to allocate memory for a new PCB
-struct pcb *allocate(void) {
-    struct pcb *new_pcb = (struct pcb *) sys_alloc_mem(sizeof(struct pcb));
-
-    new_pcb->stack_ptr = (unsigned char*)sys_alloc_mem((size_t)1024);   // allocates memory for the pcb stack
+struct pcb *allocate(void)
+{
+    struct pcb *new_pcb = (struct pcb *)sys_alloc_mem(sizeof(struct pcb));  // allocates memory for the pcb struct
     
     return new_pcb;
 }
 
-
-int pcb_free(struct pcb *pcb) {
-    if (pcb != NULL) {
-        sys_free_mem(pcb);
-        return 0;
+// Function to free memory associated with a PCB
+int pcb_free(struct pcb *pcb)
+{
+    if (pcb == NULL)
+    {
+        return -1; // Error: NULL pointer
     }
-    return -1;
+
+    // Free the memory for the stack pointer
+    if (pcb->stack_ptr != NULL)
+    {
+        sys_free_mem((void *)pcb->stack_ptr);
+    }
+
+    // Free the memory for the PCB itself
+    sys_free_mem(pcb);
+
+    return 0; // Success
 }
 
-
-
 // Function to allocate and initialize a new PCB
-struct pcb *pcb_setup(const char *name, int process_class, int priority) {
-    struct pcb *new_pcb = allocate();
-    if (new_pcb != NULL) {
+struct pcb *pcb_setup(const char *name, int process_class, int priority)
+{
+    struct pcb *new_pcb = allocate();   // allocates memory for the new pcb
+    
+    // Check if memory allocated successfully
+    if (new_pcb != NULL)
+    {
+        // Define attributes of new PCB
         strcpy(new_pcb->process_name, name);
         new_pcb->process_class = process_class;
         new_pcb->process_priority = priority;
         new_pcb->execution_state = READY;
         new_pcb->dispatching_state = NOT_SUSPENDED;
-       // new_pcb->stack_ptr->eip = (uint32_t) function;
+
+        pcb_insert(new_pcb);
     }
     return new_pcb;
 }
-
 
 // Function to find a PCB by name
 struct pcb *pcb_find(const char *name)
@@ -461,4 +472,3 @@ struct queue* get_susp_ready_q() {
 struct queue* get_susp_blocked_q() {
     return susp_blocked_q;
 }
-
