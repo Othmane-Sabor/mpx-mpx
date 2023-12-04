@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <mpx/device.h>
+#include <sys_req.h>
 
 /**
  @file mpx/serial.h
@@ -35,4 +36,64 @@ int serial_out(device dev, const char *buffer, size_t len);
 
 int serial_poll(device dev, char *buffer, size_t len);
 
+int serial_open(device dev, int speed);
+int serial_read(device dev, char *buf, size_t len);
+int serial_write(device dev, char *buf, size_t len);
+extern void isr(void*);
+
+typedef enum { AVAILABLE1, IN_USE } AllocationStatus;
+#define MAX_BUFFER_SIZE 50
+#define AVAILABLE 1
+#define USE 0
+// Device Control Block (DCB) for Serial Port Driver
+struct dcb{
+    device dev;
+    // available or in use by process X
+    AllocationStatus allocationStatus; // Device allocation status
+    int isOpen;              // Flag indicating whether the port is open (0 - closed, 1 - open)
+    int eventFlag;           // Set to 0 at the beginning of an operation, 1 when the operation is complete
+    op_code statusCode; // write read idle
+    // Addresses and counters associated with the current input buffer
+    char* inputBufferAddress;
+    int inputBufferCounter;
+    int transferedCount;
+    // // Addresses and counters associated with the current output buffer
+    // char* outputBufferAddress;
+    // int outputBufferCounter;
+    // int writtenCount;
+
+    // Input ring buffer and associated properties
+    char inputRingBuffer[MAX_BUFFER_SIZE];
+    int inputRingBufferInputIndex;
+    int inputRingBufferCounter;
+
+    // queue
+    struct iocb* active_iocb;
+    struct iocb* pending_req;
+};
+
+struct iocb{
+    device dev;
+    char pcb_name[8];
+    int opcode;
+    char *buf;
+    int buf_size;
+    struct iocb* next;
+};
+
+
+// Getter function declarations
+struct dcb *get_dcb1();
+struct dcb *get_dcb2();
+struct dcb *get_dcb3();
+struct dcb *get_dcb4();
+
+// Setter function declarations
+void set_dcb1(struct dcb *value);
+void set_dcb2(struct dcb *value);
+void set_dcb3(struct dcb *value);
+void set_dcb4(struct dcb *value);
+
+
 #endif
+

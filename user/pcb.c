@@ -2,6 +2,7 @@
 #include <pcb.h>
 #include <memory.h>
 #include <sys_req.h>
+#include <processes.h>
 
 static struct queue *ready_q = NULL;
 static struct queue *blocked_q = NULL;
@@ -50,6 +51,8 @@ struct pcb *pcb_setup(const char *name, int process_class, int priority)
         new_pcb->process_priority = priority;
         new_pcb->execution_state = READY;
         new_pcb->dispatching_state = NOT_SUSPENDED;
+
+        new_pcb->stack_ptr = (unsigned char *) new_pcb->stack + STACK_SIZE - 2 - sizeof(struct context);
 
         pcb_insert(new_pcb);
     }
@@ -471,4 +474,29 @@ struct queue* get_susp_ready_q() {
 
 struct queue* get_susp_blocked_q() {
     return susp_blocked_q;
+}
+
+void load_pcb(struct pcb *p, void (*proc)()) {
+    
+ struct context* cp= (struct context *)p->stack_ptr;
+
+ cp->cs = (uint32_t) 0x08;
+ cp->ds = (uint32_t) 0x10;
+ cp->es = (uint32_t) 0x10;
+ cp->fs = (uint32_t) 0x10;
+ cp->gs = (uint32_t) 0x10;
+ cp->ss = (uint32_t) 0x10;
+
+ cp->ebp = (uint32_t) p->stack;
+ cp->esp = (uint32_t) p->stack_ptr;
+
+ cp->eip = (uint32_t) proc;
+ cp->eflags = (uint32_t) 0x0202;
+
+ cp->eax = (uint32_t) 0;
+ cp->ebx = (uint32_t) 0;
+ cp->ecx = (uint32_t) 0;
+ cp->edx = (uint32_t) 0;
+ cp->esi = (uint32_t) 0;
+ cp->edi = (uint32_t) 0;
 }

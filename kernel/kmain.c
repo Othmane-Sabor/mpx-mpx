@@ -7,6 +7,8 @@
 #include <string.h>
 #include <memory.h>
 #include "../user/interface.h"
+#include "pcb.h"
+#include "processes.h"
 
 static void klogv(device dev, const char* msg)
 {
@@ -27,6 +29,14 @@ void kmain(void)
 	// output should come first as it describes what is about to happen.
 	// Initialize serial port
 	serial_init(COM1);
+
+	// opening the port ?
+	//serial_open(COM1,19200);
+	// serial_open(COM2,19200);
+	// serial_open(COM3,19200);
+	// serial_open(COM4,19200);
+
+
 	klogv(COM1, "Initialized serial I/O on COM1 device...");
 
 	// 1) Global Descriptor Table (GDT) -- <mpx/gdt.h>
@@ -91,8 +101,9 @@ void kmain(void)
 	// Pass execution to your command handler so the user can interact with
 	// the system.
 	klogv(COM1, "Transferring control to commhand...");
-	comhand();
-	// R4: __asm__ volatile ("int $0x60" :: "a"(IDLE));
+	load("Comhand", SYSTEM_PROCESS, 0, comhand);
+	load("Sys_i", SYSTEM_PROCESS, 9, sys_idle_process);
+	__asm__ volatile ("int $0x60" :: "a"(IDLE));
 
 	// 10) System Shutdown -- *headers to be determined by your design*
 	// After your command handler returns, take care of any clean up that

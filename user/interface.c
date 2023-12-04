@@ -11,6 +11,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <pcb.h>
+#include <processes.h>
+#include "interface.h"
 
 // RTC Register addresses (from the Intel document)
 #define RTC_INDEX_PORT 0x70
@@ -101,7 +103,6 @@ void get_time_command()
 }
 
 // shutdown flag
-// shutdown flag
 int should_shutdown = 0;
 
 typedef struct
@@ -123,7 +124,6 @@ void get_time_command();
 void set_time_command(const char *args);
 
 // PCB command declarations
-void create_pcb_command(const char *args);
 void show_pcb_command(const char *args);
 void show_all_pcbs_command();
 void show_ready_pcbs_command();
@@ -136,6 +136,8 @@ void unblock_pcb_command(const char *name);
 void set_pcb_priority_command(const char *args);
 void yield_command(const char *args);
 void loadR3_command(const char *args);
+void alarm_command(const char *args);
+void alarm_proc();
 
 //com struct
 command_t commands[] = {
@@ -146,7 +148,6 @@ command_t commands[] = {
     {"setdate", set_date_command, "Set the date: 'setdate [MM/DD/YY]'"},
     {"gettime", get_time_command, "Get the current time"},
     {"settime", set_time_command, "Set the time: 'settime [hh:mm:ss]'"},
-    {"createpcb", create_pcb_command, "Creates a new PCB: createpcb [name] [class ('user' or 'system')] [priority (0-9)]"},
     {"showpcb", show_pcb_command, "Shows a given PCB if it exists: showpcb [name]"},
     {"showreadypcbs", show_ready_pcbs_command, "Shows all existing PCBs in the Ready state"},
     {"showblockedpcbs", show_blocked_pcbs_command, "Shows all existing PCBs in the Blocked state"},
@@ -159,6 +160,7 @@ command_t commands[] = {
     {"setpcbprio", set_pcb_priority_command, "Sets the priority of a PCB: 'setpcbprio [name] [newpriority (0-9)]'"},
     {"yield",yield_command,"Yield the CPU"},
     {"loadR3",loadR3_command,"Load R3"},
+    {"alarm",alarm_command,"Set an alarm to display a message at a specific time"},
     {NULL, NULL, NULL}};
 
 // Function to remove trailing whitespace from input
@@ -177,7 +179,7 @@ void version_command(const char *args)
 {
     (void)args; // Mark the parameter as unused
 
-    char version_msg[] = "MPX Version: R2, Compiled on: 3rd October 2023\r\n";
+    char version_msg[] = "MPX Version: R3, Compiled on: 15th November 2023\r\n";
     sys_req(WRITE, COM1, version_msg, sizeof(version_msg));
 }
 
@@ -347,104 +349,6 @@ void set_time_command(const char *time_str)
 
         sys_req(WRITE, COM1, "Time set successfully.\r\n", 26);
     }
-}
-
-// Command for creating a pcb in the format: 'createpcb [name] [class] [priority]'
-void create_pcb_command(const char *createpcb_str)
-{
-    // Missing all 3 attributes entirely
-    if (createpcb_str == NULL)
-    {
-        char err_msg[] = "Invalid format: 'createpcb [name] [class] [priority]'\r\n\0";
-        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
-
-        return;
-    }
-
-    char *tokens[3];                                      // array to store the name, class, and priority
-    char *token = strtok((char *)createpcb_str, " \t\n"); // tokenize the first string on space, tab, or newline
-
-    int num_tokens = 0;
-
-    // Tokenize what is left of createpcb_str
-    while (token != NULL && num_tokens < 3)
-    {
-        tokens[num_tokens++] = token;
-        token = strtok(NULL, " \t\n");
-    }
-
-    // Either too many attributes or not enough attributes
-    if (num_tokens != 3)
-    {
-        char err_msg[] = "Please provide the name, class, and priority\r\n\0";
-        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
-
-        return;
-    }
-
-    // Process name exceeds length limit 8
-    if (strlen(tokens[0]) > 8)
-    {
-        char err_msg[] = "Process names must be no more than 8 characters long\r\n\0";
-        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
-
-        return;
-    }
-
-    // Process with the same name already exists
-    if (pcb_find(tokens[0]) != NULL)
-    {
-        char err_msg[] = "A process by that name already exists\r\n\0";
-        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
-
-        return;
-    }
-
-    int class;
-
-    // Determine the class
-    if (strcmp(tokens[1], "user") == 0)
-    {
-        class = USER_APP;
-    }
-    else if (strcmp(tokens[1], "system") == 0)
-    {
-        class = SYSTEM_PROCESS;
-    }
-    // Invalid class entry
-    else
-    {
-        char err_msg[] = "Process class must be either 'user' or 'system'\r\n\0";
-        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
-
-        return;
-    }
-
-    int priority;
-
-    // atoi(str) returns '0' if there is no int in str - check for '0' before conversion
-    if (strcmp(tokens[2], "0") != 0)
-    {
-        priority = atoi(tokens[2]);
-
-        // Priority entry falls outside of the accepted range (a zero here indicates an invalid entry)
-        if (priority < 1 || priority > 9)
-        {
-            char err_msg[] = "Process priority must be an integer between 0 and 9\r\n\0";
-            sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
-
-            return;
-        }
-    }
-    else
-    {
-        priority = 0;
-    }
-
-    pcb_setup(tokens[0], class, priority);
-
-    char success_msg[] = "PCB successfully created\r\n\0";
-    sys_req(WRITE, COM1, success_msg, sizeof(success_msg));
 }
 
 // Command for showing a pcb in the format: 'showpcb [name]'
@@ -871,18 +775,144 @@ void set_pcb_priority_command(const char *args)
 
 void yield_command(const char *args){
     (void)args;
-    sys_req(WRITE, COM1, "Yielding...",12);
+    char yield_msg[] = "Yielding R3...\r\n\0";
+    sys_req(WRITE, COM1, yield_msg, sizeof(yield_msg));
     sys_req(IDLE);
+    char done_msg[] = "Finished Yielding R3...\r\n\0";
+    sys_req(WRITE, COM1, done_msg, sizeof(done_msg));
 }
 
 void loadR3_command(const char *args){
     (void)args;
-    sys_req(WRITE, COM1, "Loading R3...",14);
+    char load_msg[] = "Loading R3...\r\n\0";
+    sys_req(WRITE, COM1, load_msg, sizeof(load_msg));
+    load("P1", USER_APP, 3, proc1);
+    load("P2", USER_APP, 3, proc2);
+    load("P3", USER_APP, 3, proc3);
+    load("P4", USER_APP, 3, proc4);
+    load("P5", USER_APP, 3, proc5);
+    char done_msg[] = "Finished Loading R3.\r\n\0";
+    sys_req(WRITE, COM1, done_msg, sizeof(done_msg));
 }
+
+struct pcb *load(const char *name, int process_class, int priority, void (*proc)())
+{
+    struct pcb *new_pcb = allocate();   // allocates memory for the new pcb
+    
+    // Check if memory allocated successfully
+    if (new_pcb != NULL)
+    {
+        // Define attributes of new PCB
+        strcpy(new_pcb->process_name, name);
+        new_pcb->process_class = process_class;
+        new_pcb->process_priority = priority;
+        new_pcb->execution_state = READY;
+        new_pcb->dispatching_state = NOT_SUSPENDED;
+
+        new_pcb->stack_ptr = (unsigned char *) new_pcb->stack + STACK_SIZE - 2 - sizeof(struct context);
+
+        load_pcb(new_pcb, proc);
+        pcb_insert(new_pcb);
+    }
+    return new_pcb;
+}
+
+unsigned char global_hours, global_minutes, global_seconds;
+const char* global_message;
+const char* global_msg_extra;
+const char* global_msg_extra_proc;
+
+
+void alarm_proc() 
+{
+    unsigned char mpx_seconds = bcd_to_binary(read_rtc(RTC_SECONDS));
+    unsigned char mpx_minutes = bcd_to_binary(read_rtc(RTC_MINUTES));
+    unsigned char mpx_hours = bcd_to_binary(read_rtc(RTC_HOURS));
+
+    int mpx_time = mpx_seconds + mpx_minutes * 60 + mpx_hours * 3600;
+    int alarm_time = global_seconds + global_minutes * 60 + global_hours * 3600;
+    global_hours = 0;
+    global_minutes = 0;
+    global_seconds = 0;
+
+    const char* message = global_message;
+    global_msg_extra_proc = "1\r\n\0";
+
+    sys_req(WRITE, COM1, message, sizeof(message));
+    sys_req(WRITE, COM1, global_msg_extra_proc, sizeof(global_msg_extra_proc));
+
+
+    while (mpx_time < alarm_time)
+    {
+        sys_req(WRITE, COM1, global_msg_extra_proc, sizeof(global_msg_extra_proc));
+        sys_req(IDLE);
+        mpx_seconds = bcd_to_binary(read_rtc(RTC_SECONDS));
+        mpx_minutes = bcd_to_binary(read_rtc(RTC_MINUTES));
+        mpx_hours = bcd_to_binary(read_rtc(RTC_HOURS));
+        mpx_time = mpx_seconds + mpx_minutes * 60 + mpx_hours * 3600;
+    }
+
+    sys_req(WRITE, COM1, message, sizeof(message));
+    sys_req(EXIT);
+}
+
+void alarm_command(const char *args)
+{
+    if (args == NULL)
+    {
+        char err_msg[] = "Invalid format: 'alarm [time] [message]'\r\n\0";
+        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
+
+        return;
+    }
+
+    char *tokens[2];                              // array to store the name, class, and priority
+    char *token = strtok((char *)args, " \t\n"); // tokenize the first string on space, colon, tab, or newline
+
+    int num_tokens = 0;
+
+    while (token != NULL && num_tokens < 2)
+    {
+        tokens[num_tokens++] = token;
+        token = strtok(NULL, "\t\n");
+    }
+
+    if (num_tokens != 2)
+    {
+        char err_msg[] = "Please provide the time and message\r\n\0";
+        sys_req(WRITE, COM1, err_msg, sizeof(err_msg));
+
+        return;
+    }
+
+    const char *time_str = tokens[0];
+    global_message = tokens[1];
+    global_msg_extra = "\r\n\0";
+
+    sys_req(WRITE, COM1, global_message, sizeof(global_message));
+    sys_req(WRITE, COM1, global_msg_extra, sizeof(global_msg_extra));
+
+    global_hours = (time_str[0] - '0') * 10 + (time_str[1] - '0');
+    global_minutes = (time_str[3] - '0') * 10 + (time_str[4] - '0');
+    global_seconds = (time_str[6] - '0') * 10 + (time_str[7] - '0');
+
+    if (global_hours > 23 || global_minutes > 59 || global_seconds > 59)
+    {
+        sys_req(WRITE, COM1, "Invalid time values.\r\n", 23);
+        return;
+    }
+
+    load("Alarm", USER_APP, 1, alarm_proc);
+    char done_msg[] = "Alarm set.\r\n\0";
+    sys_req(WRITE, COM1, done_msg, sizeof(done_msg));
+
+}
+
 void comhand(void)
 {
     for (;;)
     {
+        
         sys_req(WRITE, COM1, "(path)===> $ ", 14);
 
         char buf[100] = {0};
@@ -936,8 +966,11 @@ void comhand(void)
         // Check for shutdown command and confirmation
         if (should_shutdown)
         {
+            sys_req(EXIT);
             return; // Exit the loop
         }
+
+        sys_req(IDLE);
     }
 }
 

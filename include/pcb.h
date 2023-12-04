@@ -57,6 +57,8 @@ int pcb_remove(struct pcb *pcb);
 // Function to set the priority of a PCB
 int pcb_set_priority(const char *name, int new_priority);
 
+void load_pcb(struct pcb *p, void (*proc)());
+
 struct queue* get_ready_q(void);
 struct queue* get_blocked_q(void);
 struct queue* get_susp_ready_q(void);
