@@ -65,10 +65,124 @@ void set_dcb4(struct dcb *value) {
     dcb4 = value;
 }
 
+void serial_input_interrupt(struct dcb *current_dcb);
+void serial_output_interrupt(struct dcb *current_dcb) ;
 
-void serial_interrupt(void){
 
+void serial_interrupt(void) {
+    // Step 1: Disable interrupts
+    cli();
+    device dev = COM1; // HOW DO WE OBTAIN IT 
+    // Step 2: Obtain the correct DCB
+    struct dcb *current_dcb;
+    switch (dev) {
+        case COM1:
+            current_dcb = dcb1;
+            break;
+        case COM2:
+            current_dcb = dcb2;
+            break;
+        case COM3:
+            current_dcb = dcb3;
+            break;
+        case COM4:
+            current_dcb = dcb4;
+            break;
+        default:
+            // Invalid device, clear interrupt and return
+            sti();
+            return;
+    }
+
+    // Step 3: Read the Interrupt ID register to determine the exact cause
+    unsigned char interrupt_type = inb(dev + IIR) & 0x06;
+
+    // Step 4: Call the appropriate second-level handler
+    switch (interrupt_type) {
+        case 0x04: // Modem Status Interrupt
+            // Call modem status interrupt handler
+            // (not implemented here, just read from Modem Status register)
+            inb(dev + MSR);
+            break;
+        case 0x02: // Output Interrupt
+            serial_output_interrupt(current_dcb);
+            break;
+        case 0x00: // Input Interrupt
+            serial_input_interrupt(current_dcb);
+            break;
+        case 0x06: // Line Status Interrupt
+            // Call line status interrupt handler
+            // (not implemented here, just read from Line Status register)
+            inb(dev + LSR);
+            break;
+    }
+
+    // Step 5: Clear the interrupt by sending EOI to the PIC command register
+    outb( 0x20,0X20 ); /// QUESITON
+
+    // Step 6: Reenable interrupts
+    sti();
 }
+
+void serial_input_interrupt(struct dcb *current_dcb) {
+    // Read the character from the device
+    char received_char = inb(current_dcb->dev + RBR);
+
+    // If the DCB state is reading and the event flag is not set
+    if (current_dcb->statusCode == READ && current_dcb->eventFlag == 0) {
+        // If the DCB has an input buffer set, store the character in it
+        if (current_dcb->inputBufferAddress != NULL) {
+            current_dcb->inputBufferAddress[current_dcb->inputBufferCounter++] = received_char;
+            current_dcb->transferedCount++;
+
+            // If the buffer is full or newline is received, signal completion
+            if (current_dcb->inputBufferCounter >= MAX_BUFFER_SIZE || received_char == '\n') {
+                current_dcb->eventFlag = 1;
+            }
+        } else {
+            // If the buffer is not set, attempt to store the character in the ring buffer
+            if (current_dcb->inputRingBufferCounter < MAX_BUFFER_SIZE) {
+                current_dcb->inputRingBuffer[current_dcb->inputRingBufferInputIndex++] = received_char;
+                current_dcb->inputRingBufferCounter++;
+
+                // Handle ring buffer overflow by resetting the indices
+                if (current_dcb->inputRingBufferInputIndex >= MAX_BUFFER_SIZE) {
+                    current_dcb->inputRingBufferInputIndex = 0;
+                }
+
+                // If the buffer is full or newline is received, signal completion
+                if (current_dcb->inputRingBufferCounter >= MAX_BUFFER_SIZE || received_char == '\n') {
+                    current_dcb->eventFlag = 1;
+                }
+            }
+        }
+    }
+}
+
+
+// Function to handle serial output interrupt
+void serial_output_interrupt(struct dcb *current_dcb) {
+    // If the DCB state is writing and the event flag is not set
+    if (current_dcb->statusCode == WRITE && current_dcb->eventFlag == 0) {
+        // If the DCB has an output buffer set, write the next character to the device
+        if (current_dcb->inputBufferAddress != NULL) {
+            char next_char = current_dcb->inputBufferAddress[current_dcb->inputBufferCounter++];
+
+            // If there is additional data, write the next character to the device
+            if (next_char != '\0') {
+                outb(current_dcb->dev + THR, next_char);
+                current_dcb->transferedCount++;
+
+                // If the last character from the IOCB is written, disable write interrupts and signal completion
+                if (next_char == '\0' || current_dcb->inputBufferCounter >= MAX_BUFFER_SIZE) {
+                    current_dcb->eventFlag = 1;
+                    outb(current_dcb->dev + IER, 0x00); // Disable write interrupts
+                }
+            }
+        }
+    }
+}
+
 
 int serial_open(device dev, int speed){
     struct dcb* current_dcb;
@@ -80,14 +194,14 @@ int serial_open(device dev, int speed){
         case COM1:
             // add dev
             dcb1 = (struct dcb *) sys_alloc_mem(sizeof(struct dcb));
-        
+            dcb1 -> dev = COM1;
             current_dcb = dcb1;
             vector = 0x24;
             pic_lvl= 4;
             break;
         case COM2:
             dcb2 = (struct dcb *) sys_alloc_mem(sizeof(struct dcb));
-            
+            dcb2 -> dev = COM2; 
             current_dcb = dcb2;
             vector = 0x23;
             pic_lvl= 3;
@@ -95,14 +209,14 @@ int serial_open(device dev, int speed){
             break;
         case COM3:
             dcb3 = (struct dcb *) sys_alloc_mem(sizeof(struct dcb));
-            
+            dcb3 -> dev = COM3; 
             current_dcb = dcb3;
             vector = 0x24;
             pic_lvl = 4;
             break;
         case COM4:
             dcb4 = (struct dcb *) sys_alloc_mem(sizeof(struct dcb));
-            
+            dcb4 -> dev = COM4;
             current_dcb = dcb4;
             vector = 0x23;
             pic_lvl = 3;
@@ -128,6 +242,7 @@ int serial_open(device dev, int speed){
     }else{
         current_dcb -> statusCode = IDLE;
         current_dcb -> eventFlag = AVAILABLE; // NOT SURE
+        current_dcb -> allocationStatus = AVAILABLE;
         current_dcb -> isOpen = 1; 
         current_dcb -> inputRingBufferInputIndex = 0;
         current_dcb ->inputRingBufferCounter = 0; 

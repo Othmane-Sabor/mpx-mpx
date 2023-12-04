@@ -5,6 +5,7 @@
 #include <mpx/device.h>
 #include <mpx/serial.h>
 #include <memory.h>
+#include <mpx/interrupts.h>
 
 
 struct pcb *current_process = NULL; 
@@ -25,7 +26,12 @@ struct context *sys_call(struct context *ctx) {
     // device current_device;
     // char *current_buf;
     // int buf_size;
-    check_io_completion();
+    while(get_ready_q()->front == NULL){
+        check_io_completion();
+        sti();
+    }
+    cli();
+
 
     if (operation == IDLE) {
         if (initial_context == NULL) {  
@@ -46,6 +52,7 @@ struct context *sys_call(struct context *ctx) {
             current_process = NULL;
         }
     } else if (operation == READ || operation == WRITE) {
+        //check_io_completion();
         // Process the I/O request
         struct iocb *new_iocb = create_iocb(ctx, operation);
         if (new_iocb != NULL) {
@@ -143,7 +150,7 @@ void process_io_request(struct iocb *iocb) {
         }
 
         // Set eventFlag to signal completion, this might be set elsewhere in your actual I/O operation
-        current_dcb->eventFlag = 1;
+        //current_dcb->eventFlag = 0;
     } else {
         // Device is busy, enqueue the request
         enqueue_io_request(current_dcb, iocb);

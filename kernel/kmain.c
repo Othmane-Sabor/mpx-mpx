@@ -31,7 +31,7 @@ void kmain(void)
 	serial_init(COM1);
 
 	// opening the port ?
-	//serial_open(COM1,19200);
+	// serial_open(COM1,19200);
 	// serial_open(COM2,19200);
 	// serial_open(COM3,19200);
 	// serial_open(COM4,19200);
@@ -101,6 +101,10 @@ void kmain(void)
 	// Pass execution to your command handler so the user can interact with
 	// the system.
 	klogv(COM1, "Transferring control to commhand...");
+	serial_open(COM1,19200);
+	serial_open(COM2,19200);
+	serial_open(COM3,19200);
+	serial_open(COM4,19200);
 	load("Comhand", SYSTEM_PROCESS, 0, comhand);
 	load("Sys_i", SYSTEM_PROCESS, 9, sys_idle_process);
 	__asm__ volatile ("int $0x60" :: "a"(IDLE));
