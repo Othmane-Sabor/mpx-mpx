@@ -5,7 +5,7 @@ kernel/serial.o: kernel/serial.c include/mpx/io.h include/mpx/serial.h \
 
 kernel/kmain.o: kernel/kmain.c include/mpx/gdt.h include/mpx/interrupts.h \
   include/mpx/serial.h include/mpx/device.h include/mpx/vm.h \
-  include/sys_req.h include/string.h include/memory.h
+  include/sys_req.h include/string.h include/memory.h lib/mem.c
 
 kernel/core-c.o: kernel/core-c.c include/mpx/gdt.h include/mpx/panic.h \
   include/mpx/interrupts.h include/mpx/io.h include/mpx/serial.h \

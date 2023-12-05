@@ -9,6 +9,7 @@
 #include "../user/interface.h"
 #include "pcb.h"
 #include "processes.h"
+#include "../lib/mem.c"
 
 static void klogv(device dev, const char* msg)
 {
@@ -88,6 +89,8 @@ void kmain(void)
 	// Page Tables, data structures that describe the logical-to-physical
 	// mapping as well as manage permissions and other metadata.
 	vm_init();
+	initialize_heap(50000);
+	sys_set_heap_functions(allocate_memory, free_memory);
 	klogv(COM1, "Initializing Virtual Memory...");
 
 	// 8) MPX Modules -- *headers vary*
@@ -105,6 +108,7 @@ void kmain(void)
 	serial_open(COM2,19200);
 	serial_open(COM3,19200);
 	serial_open(COM4,19200);
+
 	load("Comhand", SYSTEM_PROCESS, 0, comhand);
 	load("Sys_i", SYSTEM_PROCESS, 9, sys_idle_process);
 	__asm__ volatile ("int $0x60" :: "a"(IDLE));

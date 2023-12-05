@@ -29,10 +29,6 @@ enum uart_registers {
 
 static int initialized[4] = { 0 };
 
-struct dcb *dcb1;
-struct dcb *dcb2;
-struct dcb *dcb3;
-struct dcb *dcb4;
 
 struct dcb *get_dcb1() {
     return dcb1;
@@ -72,12 +68,16 @@ void serial_output_interrupt(struct dcb *current_dcb) ;
 void serial_interrupt(void) {
     // Step 1: Disable interrupts
     cli();
-    device dev = COM1; // HOW DO WE OBTAIN IT 
     // Step 2: Obtain the correct DCB
+    device dev = COM1; // HOW DO WE OBTAIN IT 
     struct dcb *current_dcb;
     switch (dev) {
         case COM1:
             current_dcb = dcb1;
+            if(current_dcb->isOpen == 0){
+                sti();
+                return;
+            }
             break;
         case COM2:
             current_dcb = dcb2;
@@ -99,7 +99,7 @@ void serial_interrupt(void) {
 
     // Step 4: Call the appropriate second-level handler
     switch (interrupt_type) {
-        case 0x04: // Modem Status Interrupt
+        case 0x00: // Modem Status Interrupt
             // Call modem status interrupt handler
             // (not implemented here, just read from Modem Status register)
             inb(dev + MSR);
@@ -107,13 +107,14 @@ void serial_interrupt(void) {
         case 0x02: // Output Interrupt
             serial_output_interrupt(current_dcb);
             break;
-        case 0x00: // Input Interrupt
+        case 0x04: // Input Interrupt
             serial_input_interrupt(current_dcb);
             break;
         case 0x06: // Line Status Interrupt
             // Call line status interrupt handler
             // (not implemented here, just read from Line Status register)
             inb(dev + LSR);
+
             break;
     }
 
@@ -132,14 +133,15 @@ void serial_input_interrupt(struct dcb *current_dcb) {
     if (current_dcb->statusCode == READ && current_dcb->eventFlag == 0) {
         // If the DCB has an input buffer set, store the character in it
         if (current_dcb->inputBufferAddress != NULL) {
-            current_dcb->inputBufferAddress[current_dcb->inputBufferCounter++] = received_char;
-            current_dcb->transferedCount++;
-
+            current_dcb->inputBufferAddress[current_dcb->transferedCount++] = received_char;
+            
             // If the buffer is full or newline is received, signal completion
-            if (current_dcb->inputBufferCounter >= MAX_BUFFER_SIZE || received_char == '\n') {
+            if (current_dcb->inputBufferCounter == current_dcb->transferedCount || received_char == '\n') {
                 current_dcb->eventFlag = 1;
             }
-        } else {
+        } 
+    }
+    else {
             // If the buffer is not set, attempt to store the character in the ring buffer
             if (current_dcb->inputRingBufferCounter < MAX_BUFFER_SIZE) {
                 current_dcb->inputRingBuffer[current_dcb->inputRingBufferInputIndex++] = received_char;
@@ -156,29 +158,34 @@ void serial_input_interrupt(struct dcb *current_dcb) {
                 }
             }
         }
-    }
 }
 
 
-// Function to handle serial output interrupt
+// Function to handle serial output interrupt0n
 void serial_output_interrupt(struct dcb *current_dcb) {
     // If the DCB state is writing and the event flag is not set
     if (current_dcb->statusCode == WRITE && current_dcb->eventFlag == 0) {
         // If the DCB has an output buffer set, write the next character to the device
-        if (current_dcb->inputBufferAddress != NULL) {
-            char next_char = current_dcb->inputBufferAddress[current_dcb->inputBufferCounter++];
-
-            // If there is additional data, write the next character to the device
-            if (next_char != '\0') {
-                outb(current_dcb->dev + THR, next_char);
-                current_dcb->transferedCount++;
-
-                // If the last character from the IOCB is written, disable write interrupts and signal completion
-                if (next_char == '\0' || current_dcb->inputBufferCounter >= MAX_BUFFER_SIZE) {
-                    current_dcb->eventFlag = 1;
-                    outb(current_dcb->dev + IER, 0x00); // Disable write interrupts
+        if (current_dcb->inputBufferAddress != NULL &&  current_dcb->transferedCount <= current_dcb->inputBufferCounter-1 ) {
+            char next_char = current_dcb->inputBufferAddress[current_dcb->transferedCount];
+                // If there is additional data, write the next character to the device
+                if (next_char != '\0') {
+                    outb(current_dcb->dev + THR, next_char); //writing one charac
+                    current_dcb->transferedCount++;
                 }
-            }
+                // If the last character from the IOCB is written, disable write interrupts and signal completion
+                if (next_char == '\0' || current_dcb->inputBufferCounter == current_dcb->transferedCount -1 ) {
+                    outb(current_dcb->dev + THR, '\n'); //writing one charac
+                    current_dcb->eventFlag = 1;
+                    current_dcb->statusCode = IDLE;
+                    current_dcb->allocationStatus = NOT_USE;
+                    current_dcb->transferedCount = 0;
+                    current_dcb->inputBufferCounter = 0;
+                    current_dcb->inputBufferAddress = NULL;
+                    outb(current_dcb->dev + IER, 0x00); // Disable write interrupts
+
+                    return;
+                }      
         }
     }
 }
@@ -242,7 +249,7 @@ int serial_open(device dev, int speed){
     }else{
         current_dcb -> statusCode = IDLE;
         current_dcb -> eventFlag = AVAILABLE; // NOT SURE
-        current_dcb -> allocationStatus = AVAILABLE;
+        current_dcb -> allocationStatus = NOT_USE;
         current_dcb -> isOpen = 1; 
         current_dcb -> inputRingBufferInputIndex = 0;
         current_dcb ->inputRingBufferCounter = 0; 
@@ -318,6 +325,7 @@ int serial_close(device dev){
 }
 
 int serial_write(device dev, char *buf, size_t len){
+    
     struct dcb *current_dcb;
     switch (dev)
     {
@@ -353,10 +361,11 @@ int serial_write(device dev, char *buf, size_t len){
                     current_dcb->eventFlag = USE; 
                     current_dcb->inputBufferAddress = buf;
                     current_dcb->inputBufferCounter = (int) len;
-                    //perform step 5 of serial_read
-                    outb(dev,buf[0]);
+                    //perform step 5 of serial_read   
+                    outb(dev + THR ,buf[0]);
+                    current_dcb->transferedCount++;
                     //current_dcb->eventFlag = AVAILABLE; 
-                    outb(dev + IER, inb(dev+IER)|0x02);
+                    outb(dev + IER, inb(dev+IER)|0x02); 
                 }
             }else{
                 if(current_dcb->isOpen ==0)

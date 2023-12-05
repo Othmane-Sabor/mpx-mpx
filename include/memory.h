@@ -29,4 +29,26 @@ int sys_free_mem(void *ptr);
 */
 void sys_set_heap_functions(void * (*alloc_fn)(size_t), int (*free_fn)(void *));
 
+void initialize_heap(size_t sz);
+void *allocate_memory(size_t sz);
+int free_memory(void *ptr);
+
+struct mcb {
+	size_t size;    // LSB ? FREE : ALLOC; LSB2 ? END : NOTEND
+	char start[];
+};
+
+extern struct mcb *memlist;
+struct mcb *mcb_next(struct mcb *mcb);
+
+#define FREE    (1<<0)
+#define END     (1<<1)
+
+#define mcb_size(m)		((m)->size & (~(END|FREE)))
+#define mcb_isfree(m)		((m)->size & FREE)
+#define mcb_isend(m)		((m)->size & END)
+#define mcb_setfree(m)		((m)->size |= FREE)
+#define mcb_clrfree(m)		((m)->size &= ~FREE)
+#define mcb_copyend(m, n)	((m)->size |= mcb_isend(n) ? END : 0)
+
 #endif

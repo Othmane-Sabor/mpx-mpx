@@ -912,9 +912,10 @@ void comhand(void)
 {
     for (;;)
     {
-        
+        //sys_req(WRITE, COM1, "B2",2);
         sys_req(WRITE, COM1, "(path)===> $ ", 14);
-
+        sys_req(WRITE, COM1, "othman ", 8);
+        
         char buf[100] = {0};
         int nread = sys_req(READ, COM1, buf, sizeof(buf) - 1); // -1 to ensure space for null-terminator
         sys_req(WRITE, COM1, "Your command : ", 16);

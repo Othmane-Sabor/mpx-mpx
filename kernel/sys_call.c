@@ -33,24 +33,43 @@ struct context *sys_call(struct context *ctx) {
     cli();
 
 
-    if (operation == IDLE) {
-        if (initial_context == NULL) {  
-            initial_context = ctx;
-        }
-        // Handle IDLE 
-        if (current_process != NULL) { //(something was running)
-            current_process->execution_state = READY;
-            current_process->stack_ptr = (unsigned char *) ctx;
-            insert_flag = 1;
-        }
-    }
-    else if (operation == EXIT) {
-        // Handle EXIT
-        if (current_process != NULL) {
-            pcb_remove(current_process); // Remove current_process from its queue
-            pcb_free(current_process); // Deallocate PCB resources
-            current_process = NULL;
-        }
+    if (operation == IDLE || operation == EXIT) {
+        if( operation == IDLE){
+            if (initial_context == NULL) {  
+                initial_context = ctx;
+            }
+            // Handle IDLE 
+            if (current_process != NULL) { //(something was running)
+                current_process->execution_state = READY;
+                current_process->stack_ptr = (unsigned char *) ctx;
+                insert_flag = 1;
+            }
+            }else if (operation == EXIT) {
+                // Handle EXIT
+                if (current_process != NULL) {
+                    pcb_remove(current_process); // Remove current_process from its queue
+                    pcb_free(current_process); // Deallocate PCB resources
+                    current_process = NULL;
+                }
+            }
+        //
+        
+        if (get_ready_q() != NULL && get_ready_q()->front != NULL) {
+                    next_process = get_ready_q()->front;
+                    ctx = (struct context *) next_process->stack_ptr;
+                    pcb_remove(next_process); // Remove current_process from its queue
+                    //pcb_free(next_process); // Deallocate PCB resources
+                    if (insert_flag == 1) {
+                        pcb_insert(current_process);
+                        insert_flag = 0;
+                    }
+                    current_process = next_process;
+        }else { // if no process, load initial context
+            ctx = initial_context;
+            initial_context = NULL; // reset initial_context as it's now being used
+        }   
+        
+            
     } else if (operation == READ || operation == WRITE) {
         //check_io_completion();
         // Process the I/O request
@@ -63,21 +82,7 @@ struct context *sys_call(struct context *ctx) {
         return ctx;
     }
     
-    if (get_ready_q() != NULL && get_ready_q()->front != NULL) {
-            next_process = get_ready_q()->front;
-            ctx = (struct context *) next_process->stack_ptr;
-            pcb_remove(next_process); // Remove current_process from its queue
-            pcb_free(next_process); // Deallocate PCB resources
-            if (insert_flag == 1) {
-                pcb_insert(current_process);
-                insert_flag = 0;
-            }
-            current_process = next_process;
-    }
-    else { // if no process, load initial context
-        ctx = initial_context;
-        initial_context = NULL; // reset initial_context as it's now being used
-    }
+    
     ctx->eax = (uint32_t) 0;
 
     return ctx;
@@ -115,7 +120,7 @@ void check_io_completion() {
 
                 dcbs[i]->active_iocb = NULL;
                 dcbs[i]->eventFlag = 0;
-                dcbs[i]->allocationStatus = AVAILABLE;
+                dcbs[i]->allocationStatus = NOT_USE;
 
                 sys_free_mem(completed_iocb);
 
@@ -136,17 +141,17 @@ void process_io_request(struct iocb *iocb) {
         return;
     }
 
-    if (current_dcb->allocationStatus == AVAILABLE) {
+    if (current_dcb->allocationStatus == NOT_USE) {
         // Device is available, process the request immediately
-        current_dcb->allocationStatus = USE;
+        current_dcb->allocationStatus = IN_USE; //use
         current_dcb->active_iocb = iocb;
 
         if (iocb->opcode == READ) {
             serial_read(iocb->dev, iocb->buf, iocb->buf_size);
-            current_dcb->transferedCount = iocb->buf_size; // Assuming full read
+            //current_dcb->transferedCount = iocb->buf_size; // Assuming full read
         } else if (iocb->opcode == WRITE) {
             serial_write(iocb->dev, iocb->buf, iocb->buf_size);
-            current_dcb->transferedCount = iocb->buf_size; // Assuming full write
+            //current_dcb->transferedCount = iocb->buf_size; // Assuming full write
         }
 
         // Set eventFlag to signal completion, this might be set elsewhere in your actual I/O operation

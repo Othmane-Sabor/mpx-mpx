@@ -41,7 +41,8 @@ int serial_read(device dev, char *buf, size_t len);
 int serial_write(device dev, char *buf, size_t len);
 extern void isr(void*);
 
-typedef enum { AVAILABLE1, IN_USE } AllocationStatus;
+typedef enum { NOT_USE, IN_USE } AllocationStatus;
+
 #define MAX_BUFFER_SIZE 50
 #define AVAILABLE 1
 #define USE 0
@@ -88,11 +89,11 @@ struct dcb *get_dcb2();
 struct dcb *get_dcb3();
 struct dcb *get_dcb4();
 
-// Setter function declarations
-void set_dcb1(struct dcb *value);
-void set_dcb2(struct dcb *value);
-void set_dcb3(struct dcb *value);
-void set_dcb4(struct dcb *value);
+
+static struct dcb *dcb1;
+static struct dcb *dcb2;
+static struct dcb *dcb3;
+static struct dcb *dcb4;
 
 
 #endif
